@@ -1,2 +1,3 @@
 # svifrykssveinar
-Verkefni Svifrykssveina í Dataþoni fyrir umherfip 2020
+Verkefni Svifrykssveina í Dataþoni fyrir umherfið 2020 :four_leaf_clover:
+
