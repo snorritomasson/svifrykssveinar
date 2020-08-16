@@ -1,16 +1,31 @@
 ### api_gogn.py
 # Hofundar: Svifrykssveinar
 # Dags: 14.8.2020
-# Sidast breytt: 14.8.2020 
+# Sidast breytt: 16.8.2020 
 ###
 # Inniheldur foll sem na i gogn i gegnum opinber API
-#
+
+import csv
+import pickle
+import numpy as np
+import pandas as pd
+import matplotlib.pyplot as plt
+import seaborn as sns
+import requests
+from bs4 import BeautifulSoup
+import time
+from datetime import datetime
+
+# from keras.models import Sequential
+# from keras.layers import *
+# from keras.optimizers import SGD, Adam
+# import keras
+# import tensorflow as tf
+# import keras.backend as kb
+
 
 def pull_ust_api():
     #Fall sem sækir nýjustu gögn frá ust, fletur út json strenginn og vistar sem .csv skrá í /data/ust_latest.csv
-
-    import requests
-    import csv
 
     #Hreinsa út skjalið og skrifa nöfn á dálkum
     with open('data/ust_latest.csv','w', newline='') as csv_file:
@@ -59,7 +74,300 @@ def pull_ust_api():
                                             ust_json[station]['parameters'][parameter][obs]['verification'], \
                                             station, uni])
 
-    #Loka .csv skrá eftirá
-    csv_file.close()
+        #Loka .csv skrá eftirá
+        csv_file.close()
+
+def pull_vedur_brunnur(dags = '', stodvar = ['1475'], initiate = 'F'):
+    #Fall sem sækir veðurathugunargöng frá brunnur.vedur.is
+
+    url = "http://brunnur.vedur.is/athuganir/athtafla/" + dags + ".html"
+    response = requests.get(url)
+
+    if response.status_code == 200:
+        #Notum BeautifoulSoup til að lesa úr html gögnunum
+        brunnur_soup = BeautifulSoup(response.content, 'html.parser')
+        count = 0
+        for row in brunnur_soup.find_all('tr'):
+            #Fara í gegnum hverja röð í töflunni
+            if count >= 0:
+                row_list = list()
+                row_list.append(dags)
+                #print(row)
+                for i in row:
+                    if i != '\n':
+                        row_list.append(i.string)
+                #print(row_list)   
+                if initiate == 'T':
+                    #Prenta header línu efst ef þetta er fyrsta beiðni
+                    if row_list[1] == 'Stöð':
+                        for stod in stodvar:
+                            with open('data/brunnur_gamalt_' +stod+ '_2015_2020.csv','w', newline='') as csv_file:
+                                    header = csv.writer(csv_file)
+                                    header.writerow(row_list)
+                            #Loka .csv skrá eftirá
+                            csv_file.close()
+                else:
+                    #Annars bæta bara einni línu í einu skjalið    
+                    if row_list[1] in stodvar:
+                        with open('data/brunnur_gamalt_' +str(row_list[1])+ '_2015_2020.csv','a', newline='') as csv_file:
+                                    header = csv.writer(csv_file)
+                                    header.writerow(row_list)
+                        #Loka .csv skrá eftirá
+                        csv_file.close()
+                        
+            count += 1    
+
+def pull_vedur_gamalt(fra_dags, til_dags, stodvar, nytt = True):
+    #Fall sem býr til .csv skrá fyrir veðurathuganir á tímabili fyrir lista af stöðvum.
+    #fra_dags skal vera hærri en til_dags
+    #fra_dags og til_dags skulu vera int á forminu YYYYMMDDHH, dæmi 2020081623
+    #Fallið notar pull_vedur_brunnur()
+    
+    dags = fra_dags
+    if nytt == False:
+        print("gera frá upphafi")
+        #pull_vedur_brunnur(dags= str(dags), stodvar = stodvar, initiate= 'T')
+        #print('buid að initiatea')
+
+    count = 0
+
+    while dags > til_dags:
+        #Fara í gegnum allar dagsetningar, nýjasta fyrst
+        if dags % 100 > 23:
+            dags = 100 * (dags // 100) + 23
+        if (dags % 10000) // 100 == 0:
+            #ef næsti mán er með 31 degi
+            if (dags % 1000000) // 10000 in (2, 4, 6, 8, 9, 11):
+                dags = 10000*(dags // 10000 - 1) + 3100 + 23
+            #ef næsti mán ef með 30 daga
+            elif (dags % 1000000) // 10000 in (5, 7, 10, 12):
+                dags = 10000*(dags // 10000 - 1) + 3000 + 23
+            #ef næsti mán ef nýtt ár
+            elif (dags % 1000000) // 10000 == 1:
+                dags = 1000000*(dags // 1000000 - 1) + 120000 + 3100 + 23
+            #ef næsti mán ef febrúar
+            elif (dags % 1000000) // 10000 == 3:
+                if (dags // 1000000) % 100 == 0:
+                    dags = 10000*(dags // 10000 - 1) + 2800 + 23
+                elif (dags // 1000000) % 4 == 0:
+                    dags = 10000*(dags // 10000 - 1) + 2900 + 23
+                else:
+                    dags = 10000*(dags // 10000 - 1) + 2800 + 23
+                
+        print('dags ', str(dags))
+        pull_vedur_brunnur(dags= str(dags), stodvar = stodvar, initiate= 'F')
+        time.sleep(1)
+        count += 1
+        dags -= 1
+    
+def pull_vedurspa():
+    #Fall sem nær í nýjustu veðurspá frá XML þjónustu vedur.is 
+
+    #Vefsíða Umhverfisstofnunar með nýjust mæligildum
+    url = "https://xmlweather.vedur.is/"
+    #leiðbeiningar fyrir param' https://www.vedur.is/media/vedurstofan/XMLthjonusta.pdf
+    param = "?op_w=xml&type=forec&lang=is&view=csv&ids=1;422&params=R;T;FX;D;W;N;P;RH;TD"
+    #Ná í gögn gegnum API
+    print(url + param)
+    response = requests.get(url + param)
+    
+    with requests.Session() as s:
+        download = s.get(url+param)
+
+        decode_data = download.content.decode('utf-8')
+
+        cr = csv.reader(decode_data.splitlines(), delimiter = ',')
+
+        my_list = list(cr)
+        count = 0
+        for row in my_list:
+            if count == 0:
+                with open('data/vedurspa.csv','w', newline='') as csv_file:
+                    header = csv.writer(csv_file)
+                    header.writerow(row)
+            else:
+                with open('data/vedurspa.csv','a', newline='') as csv_file:
+                    header = csv.writer(csv_file)
+                    header.writerow(row)
+            count += 1
+    
+def get_ust_csv():
+    #Fall sem sameinar 2015-2019 gögn frá api.ust.is með 2020 gögnum frá loftgæði.is
+    #Fallið skilar pandas dataframe
+
+    #Sækja 2015-2019 gögn sem hlaðið var niður frá api.ust.is
+    ust_csv = pd.read_csv('data/ust_aq_timeseries_2015.csv', encoding = 'utf-8')
+    for i in list(range(2016,2019 + 1)):
+        ust_csv = ust_csv.append(pd.read_csv('data/ust_aq_timeseries_'+str(i)+'.csv', encoding = 'utf-8')) 
+    ust_csv['endtime'] = pd.to_datetime(ust_csv['endtime'], format='%Y-%m-%d %H:00:00')
+    
+    #Sækja 2020 gögn sem var hlaðið niður frá loftgæði.is (auk nýjustu gilda frá api)
+    ust_2020 = pd.read_csv('data/ust_2020_formatted.csv',  encoding = "ISO-8859-1", sep=';')
+    ust_2020['endtime'] = pd.to_datetime(ust_2020['endtime'], format='%d.%m.%Y %H:00')
+
+    #Hreinsa nafn á resolution dálki
+    cols_2020 = list(ust_2020)
+    del ust_2020[str(cols_2020[0])]
+    ust_2020['resolution'] = '1h'
+
+    sameindad = pd.concat([ust_csv, ust_2020])   
+    return sameindad   
+
+def vista_latest_brunnur(stodvar = ['1475']):
+    #Fall sem vistar ný gögn frá grunnur inn í skjal með fyrri gögnum
+    #stodvar skal vera listi af strengjum sem eru veðurstöðvarnúmer
+
+    timi_fra = int(datetime.utcnow().strftime('%Y%m%d%H')) 
+
+    for stod in stodvar: 
+        #Finna nýjasta skráða tímann
+        brunnur_csv = pd.read_csv('data/brunnur_gamalt_' +str(stod)+ '_2015_2020.csv', encoding = "ISO-8859-1")
+        # print(brunnur_csv.head())
+        # print(brunnur_csv.tail())
+
+        timi_til = brunnur_csv['dags'].max()
+
+        # print(timi_til)
+        pull_vedur_gamalt(fra_dags = timi_fra, til_dags = timi_til, stodvar = [stod], nytt = True)
+
+        brunnur_csv = pd.read_csv('data/brunnur_gamalt_' +str(stod)+ '_2015_2020.csv', encoding = "ISO-8859-1")
+        # print(brunnur_csv.head())
+        # print(brunnur_csv.tail())
+
+
+def vista_latest_ust():
+    #Fall sem sameinar 2020 gögnin frá loftgæði.is með nýjustu api.ust.is gögnin í sömu skrá 
+
+    #Sækja 2020 gögn sem var hlaðið niður frá loftgæði.is (auk nýjustu gilda frá api)
+    ust_2020 = pd.read_csv('data/ust_2020_formatted.csv',  encoding = "ISO-8859-1", sep=';')
+    ust_2020['endtime'] = pd.to_datetime(ust_2020['endtime'], format='%d.%m.%Y %H:00')
+    
+    #Hreinsa nafn á resolution dálki
+    cols_2020 = list(ust_2020)
+    del ust_2020[str(cols_2020[0])]
+    ust_2020['resolution'] = '1h'
+
+    latest_ust = pd.read_csv('data/ust_latest.csv',  encoding = "ISO-8859-1", sep = ',')
+    ust_2020['endtime'] = pd.to_datetime(ust_2020['endtime'], format='%Y-%m-%d %H:00:00')
+    print(latest_ust.head())
+    print(ust_2020.tail())
+
+    #Vista nýju gildin í 2020 skrána
+    for latest_index, latest_row in latest_ust.iterrows():
+        new_latest = 0
+        for index_2020, row_2020 in ust_2020.iterrows():
+            if latest_row['pollutantnotation'] == row_2020['pollutantnotation'] and latest_row['station_local_id'] == row_2020['station_local_id'] and str(latest_row['endtime']) == str(row_2020['endtime']): 
+                # print('value already exists')
+                # print(latest_row['pollutantnotation'])
+                # print(row_2020['pollutantnotation'])
+                # print(latest_row['station_local_id'])
+                # print(row_2020['station_local_id'])
+                # print(latest_row['endtime'])
+                # print(row_2020['endtime'])
+                new_latest = 1
+                break
+        if new_latest == 0:
+            # print('no record')
+            # print(latest_row['pollutantnotation'])
+            # print(latest_row['station_local_id'])
+            # print(latest_row['endtime'])
+            with open('data/ust_2020_formatted_test.csv','a', newline='') as csv_file:
+                header = csv.writer(csv_file)
+                header.writerow([latest_row['station_local_id'], latest_row['station_name'], latest_row['endtime'], \
+                                latest_row[the_value].replace(',','.'), latest_row['pollutantnotation'], \
+                                latest_row['concentration'], latest_row['resolution']])
+
+
+def sameina_ust_vedur(vedur_stod = 1475, ust_stod = 'STA-IS0005A'):
+    #Fall sem sameinar veðurgögn og ust gögn fyrir eina veðurstöð og eina ust stöð í eina skrá
+    #Fallið skilar staðsetningu skráarinnar
+
+    #Lesa inn veðurgögn sem búið er að vista
+    vedur_csv = pd.read_csv('data/brunnur_gamalt_'+str(vedur_stod)+'_2015_2020.csv', encoding = "ISO-8859-1")
+    vedur_csv['endtime'] = pd.to_datetime(vedur_csv['dags'], format='%Y%m%d%H')
+    vedur_stod_csv = vedur_csv[vedur_csv['Stöð'] == vedur_stod] 
+    # print(vedur_stod_csv.head())
+    # print(vedur_stod_csv.tail())
+
+    #Ná í ust gögn
+    ust_csv = get_ust_csv()
+    ust_stod_csv = ust_csv[ust_csv['station_local_id'] == ust_stod] 
+    # print(ust_stod_csv.head())
+    # print(ust_stod_csv.tail())
+    
+    #Breyta kommutölum í punkttölur
+    ust_stod_csv['the_value'] = ust_stod_csv.the_value.apply(str)
+    ust_stod_csv['the_value'] = ust_stod_csv[['the_value']].apply(lambda x: x.str.replace(',','.'))
+    ust_stod_csv['the_value'] = ust_stod_csv.the_value.apply(float)
+    #print((ust_stod_csv[['the_value']]))
+    #print(ust_stod_csv.the_value.apply(str))
+    #print(type(ust_stod_csv[['the_value']]))
+
+    #Fletja út ust töfluna
+    ust_stod1 = ust_stod_csv[['station_name','station_local_id','endtime','pollutantnotation','the_value']].pivot_table(index=['station_name','station_local_id','endtime'], columns='pollutantnotation')
+    # print(ust_stod1.head())
+    # print(ust_stod1.tail())
+    ust_stod1.columns = ust_stod1.columns.droplevel().rename(None)
+    # print(ust_stod1.head())
+    # print(ust_stod1.tail())
+    
+    #Vista flötu töfluna sem .csv til að fá fram allar breytur
+    ust_stod1.reset_index().fillna("null").to_csv("data/temp.csv", sep=";", index=None)
+    ust_stod_flat = pd.read_csv('data/temp.csv', encoding = "ISO-8859-1", sep = ';')
+    # print(ust_stod_flat.head())
+    # print(ust_stod_flat.tail())
+
+    #Joina saman veður og ust gögn á tímadálkinum
+    saman = vedur_stod_csv.set_index('endtime').join(ust_stod_flat.set_index('endtime'), how = 'outer')
+    # print(saman.head())
+    # print(saman.tail())
+
+    #Vista skrá
+    skra = "data/saman_"+str(vedur_stod)+"_"+str(ust_stod)+".csv"
+    saman.reset_index().to_csv(skra, sep=";", index=None)
+    return skra
+
+def uppfaera_allt(stadir_list = [{"stadur":"Reykjavik", "stodvar":{"vedur": '1475', "ust":"STA-IS0052A"}}]):
+    #Fall sem uppfærir veðurathugunargögn, veðurspá og loftgæðigögn
+    #Fallið tekur inn lista af dict.
+    #Í dict eru tveir lyklar, stadur, sem er lýsandi og ekki notaður. Hinn er stodvar sem inniheldur dict
+    #Í stodvar dict eru tveir lyklar, einn vedur, hinn ust. Gildi þessara lykla skulu vera stöðvanúmer sem strengir
+
+    #Uppfæra ust gögn
+    pull_ust_api()
+    print("Ný ust gögn komin")
+
+    #Vista ust gogn saman við eldri
+    #vista_latest_ust()
+    print("Ný ust gögn vistuð með 2020")
+
+    for stadir in stadir_list:
+        print("Uppfærsla hefst fyrir:", stadir['stadur'])
+        
+        #Uppfæra vedurathugunargögn
+        vista_latest_brunnur(stodvar= [stadir['stodvar']['vedur']])
+        print("Brunnur uppfærður fyrir:", stadir['stadur'])
+
+        #Sameina og vista nytt ust og vedur
+        skra_stadsetning = sameina_ust_vedur(vedur_stod = int(stadir['stodvar']['vedur']), ust_stod = stadir['stodvar']['ust'])
+        print(stadir['stadur'] + " hefur verið uppfært. Ný skrá má fina hér: " + skra_stadsetning)
+
+
+
+
+
+
+
+
+
+print("byrja")
+uppfaera_allt()
+#pull_ust_api()
+#sameina_ust_vedur()
+#sameina_ust_vedur(vedur_stod=3471, ust_stod='STA-IS0052A')
+#vista_latest_brunnur(stodvar= ['1475', '3471'])
+#vista_latest_ust()
+#sameina_ust_vedur()
+
 
     
