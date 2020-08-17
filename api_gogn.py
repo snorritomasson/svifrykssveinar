@@ -1,7 +1,7 @@
 ### api_gogn.py
 # Hofundar: Svifrykssveinar
 # Dags: 14.8.2020
-# Sidast breytt: 16.8.2020 
+# Sidast breytt: 17.8.2020 
 ###
 # Inniheldur foll sem na i gogn i gegnum opinber API
 
@@ -160,37 +160,43 @@ def pull_vedur_gamalt(fra_dags, til_dags, stodvar, nytt = True):
         count += 1
         dags -= 1
     
-def pull_vedurspa():
+def pull_vedurspa(stodvar = ['1','422']):
     #Fall sem nær í nýjustu veðurspá frá XML þjónustu vedur.is 
 
     #Vefsíða Umhverfisstofnunar með nýjust mæligildum
     url = "https://xmlweather.vedur.is/"
-    #leiðbeiningar fyrir param' https://www.vedur.is/media/vedurstofan/XMLthjonusta.pdf
-    param = "?op_w=xml&type=forec&lang=is&view=csv&ids=1;422&params=R;T;FX;D;W;N;P;RH;TD"
-    #Ná í gögn gegnum API
-    print(url + param)
-    response = requests.get(url + param)
     
-    with requests.Session() as s:
-        download = s.get(url+param)
+    stod_count = 0
+    for stod in stodvar:
+        #leiðbeiningar fyrir param' https://www.vedur.is/media/vedurstofan/XMLthjonusta.pdf
+        param = "?op_w=xml&type=forec&lang=is&view=csv&ids="+str(stod)+"&params=R;T;FX;D;W;N;P;RH;TD"
+        #Ná í gögn gegnum API
+        print(url + param)
+        response = requests.get(url + param)
+        
+        with requests.Session() as s:
+            download = s.get(url+param)
 
-        decode_data = download.content.decode('utf-8')
+            decode_data = download.content.decode('utf-8')
 
-        cr = csv.reader(decode_data.splitlines(), delimiter = ',')
+            cr = csv.reader(decode_data.splitlines(), delimiter = ',')
 
-        my_list = list(cr)
-        count = 0
-        for row in my_list:
-            if count == 0:
-                with open('data/vedurspa.csv','w', newline='') as csv_file:
-                    header = csv.writer(csv_file)
-                    header.writerow(row)
-            else:
-                with open('data/vedurspa.csv','a', newline='') as csv_file:
-                    header = csv.writer(csv_file)
-                    header.writerow(row)
-            count += 1
-    
+            my_list = list(cr)
+            count = 0
+            for row in my_list:
+                if count == 0 and stod_count == 0:
+                    #Skrifum header bara frá fyrstu stöð
+                    with open('data/vedurspa.csv','w', newline='') as csv_file:
+                        header = csv.writer(csv_file)
+                        header.writerow(row)
+                elif count > 0:
+                    #Sleppum header fyrir seinni stöðvar
+                    with open('data/vedurspa.csv','a', newline='') as csv_file:
+                        header = csv.writer(csv_file)
+                        header.writerow(row)
+                count += 1
+        stod_count += 1
+        
 def get_ust_csv():
     #Fall sem sameinar 2015-2019 gögn frá api.ust.is með 2020 gögnum frá loftgæði.is
     #Fallið skilar pandas dataframe
@@ -203,11 +209,11 @@ def get_ust_csv():
     
     #Sækja 2020 gögn sem var hlaðið niður frá loftgæði.is (auk nýjustu gilda frá api)
     ust_2020 = pd.read_csv('data/ust_2020_formatted.csv',  encoding = "ISO-8859-1", sep=';')
-    ust_2020['endtime'] = pd.to_datetime(ust_2020['endtime'], format='%d.%m.%Y %H:00')
+    ust_2020['endtime'] = pd.to_datetime(ust_2020['endtime'], format='%Y-%m-%d %H:00:00')
 
     #Hreinsa nafn á resolution dálki
-    cols_2020 = list(ust_2020)
-    del ust_2020[str(cols_2020[0])]
+    # cols_2020 = list(ust_2020)
+    # del ust_2020[str(cols_2020[0])]
     ust_2020['resolution'] = '1h'
 
     sameindad = pd.concat([ust_csv, ust_2020])   
@@ -240,42 +246,100 @@ def vista_latest_ust():
 
     #Sækja 2020 gögn sem var hlaðið niður frá loftgæði.is (auk nýjustu gilda frá api)
     ust_2020 = pd.read_csv('data/ust_2020_formatted.csv',  encoding = "ISO-8859-1", sep=';')
-    ust_2020['endtime'] = pd.to_datetime(ust_2020['endtime'], format='%d.%m.%Y %H:00')
+    ust_2020['endtime'] = pd.to_datetime(ust_2020['endtime'], format='%Y-%m-%d %H:00:00')
     
     #Hreinsa nafn á resolution dálki
-    cols_2020 = list(ust_2020)
-    del ust_2020[str(cols_2020[0])]
+    # cols_2020 = list(ust_2020)
+    # del ust_2020[str(cols_2020[0])]
     ust_2020['resolution'] = '1h'
 
     latest_ust = pd.read_csv('data/ust_latest.csv',  encoding = "ISO-8859-1", sep = ',')
-    ust_2020['endtime'] = pd.to_datetime(ust_2020['endtime'], format='%Y-%m-%d %H:00:00')
-    print(latest_ust.head())
-    print(ust_2020.tail())
+    latest_ust['endtime'] = pd.to_datetime(latest_ust['endtime'], format='%Y-%m-%d %H:00:00')
+    # print(latest_ust.head())
+    # print(ust_2020.tail())
+    latest_ust['the_value'] = latest_ust.the_value.apply(str)
+    latest_ust['the_value'] = latest_ust[['the_value']].apply(lambda x: x.str.replace('.',','))
+    # latest_ust['the_value'] = latest_ust.the_value.apply(float)
 
-    #Vista nýju gildin í 2020 skrána
-    for latest_index, latest_row in latest_ust.iterrows():
-        new_latest = 0
-        for index_2020, row_2020 in ust_2020.iterrows():
-            if latest_row['pollutantnotation'] == row_2020['pollutantnotation'] and latest_row['station_local_id'] == row_2020['station_local_id'] and str(latest_row['endtime']) == str(row_2020['endtime']): 
-                # print('value already exists')
-                # print(latest_row['pollutantnotation'])
-                # print(row_2020['pollutantnotation'])
-                # print(latest_row['station_local_id'])
-                # print(row_2020['station_local_id'])
-                # print(latest_row['endtime'])
-                # print(row_2020['endtime'])
-                new_latest = 1
-                break
-        if new_latest == 0:
-            # print('no record')
-            # print(latest_row['pollutantnotation'])
-            # print(latest_row['station_local_id'])
-            # print(latest_row['endtime'])
-            with open('data/ust_2020_formatted_test.csv','a', newline='') as csv_file:
-                header = csv.writer(csv_file)
-                header.writerow([latest_row['station_local_id'], latest_row['station_name'], latest_row['endtime'], \
-                                latest_row[the_value].replace(',','.'), latest_row['pollutantnotation'], \
-                                latest_row['concentration'], latest_row['resolution']])
+    # print(latest_ust.station_local_id.unique())
+    # print(type(latest_ust.station_local_id.unique()))
+    # print(pd.DataFrame(data=latest_ust.station_local_id.unique(), columns=["station_local_id"]))
+    latest_stodvar = pd.DataFrame(data=latest_ust.station_local_id.unique(), columns=["station_local_id"])
+    print(ust_2020)
+    stodvar_2020 = pd.DataFrame(data=ust_2020.station_local_id.unique(), columns=["station_local_id"])
+    # print(latest_stodvar)
+    # print(type(latest_stodvar))
+    # print(stodvar_2020)
+    # print(type(stodvar_2020))
+    
+    stodvar = latest_stodvar.join(stodvar_2020.set_index('station_local_id'), on='station_local_id', how = 'inner')
+    # print('stodvar')
+    # print(stodvar)
+
+    count = 0
+    for index, stod in stodvar.iterrows():
+        # print('inni i for')
+        # print(type(stod), str(stod[0]))
+        # print(type(index), index)
+        
+        if 'STA-' in str(stod):
+            #print(type(stod), stod)
+            # print("inni i if")
+            latest_stod = latest_ust.loc[(latest_ust['station_local_id'] == str(stod[0]))]
+            ust_2020_stod = ust_2020.loc[(ust_2020['station_local_id'] == str(stod[0]))]
+            
+            # print(latest_stod.head())
+            # print(latest_stod.tail())
+            # print(ust_2020_stod.head())
+            # print(ust_2020_stod.tail())
+
+            latest_stod_efni = pd.DataFrame(data=latest_stod.pollutantnotation.unique(), columns=["pollutantnotation"])
+            stodvar_2020_efni = pd.DataFrame(data=ust_2020_stod.pollutantnotation.unique(), columns=["pollutantnotation"])
+            # print(latest_stod_efni)
+            # print(type(latest_stod_efni))
+            # print(stodvar_2020_efni)
+            # print(type(stodvar_2020_efni))
+            
+            efnin = latest_stod_efni.join(stodvar_2020_efni.set_index('pollutantnotation'), on='pollutantnotation', how = 'inner')
+
+            # latest_efni = latest_stod.pollutantnotation.unique()
+            # ust_2020_efni = ust_2020_stod.pollutantnotation.unique()
+            # efni = latest_efni.set_index('pollutantnotation').join(ust_2020_efni.set_index('pollutantnotation'), how = 'inner')
+            for index, efni in efnin.iterrows():
+                
+                # print('inni i efni for loop')
+                # print(efni)
+                
+                ust_2020_stod_efni = ust_2020_stod.loc[ust_2020['pollutantnotation'] == str(efni[0])]
+                latest_stod_efni = latest_stod.loc[latest_stod['pollutantnotation'] == str(efni[0])]
+
+                most_recent = ust_2020_stod_efni['endtime'].max()
+                # print(most_recent)
+                # print(type(most_recent))
+                
+                if count == 0:
+                    latest_stod_efni_nytt = latest_stod_efni.loc[latest_stod_efni['endtime'] > most_recent]
+                else:
+                    latest_stod_efni_nytt = latest_stod_efni_nytt.append(latest_stod_efni.loc[latest_stod_efni['endtime'] > most_recent])
+                print(latest_stod_efni_nytt.head())
+                print(latest_stod_efni_nytt.tail())
+                
+                #Vista nýju gildin í 2020 skrána
+                # for latest_index, latest_row in latest_stod_efni_nytt.iterrows():
+                #     with open('data/ust_2020_formatted_test.csv','a', newline='', encoding = "ISO-8859-1") as csv_file:
+                #         header = csv.writer(csv_file)
+                #         header.writerow([latest_row['resolution'], latest_row['station_local_id'], latest_row['station_name'], latest_row['endtime'], \
+                #                         latest_row['the_value'], latest_row['pollutantnotation'], \
+                #                         latest_row['concentration']])
+                count += 1
+    print('SIDASDA PRENT')
+    print(ust_2020.head())
+    print(ust_2020.tail())
+    print(ust_2020.append(latest_stod_efni_nytt).head())
+    print(ust_2020.append(latest_stod_efni_nytt).tail())
+    ust_2020.append(latest_stod_efni_nytt).to_csv("data/ust_2020_formatted.csv",sep = ';', index = False)
+    
+    
 
 
 def sameina_ust_vedur(vedur_stod = 1475, ust_stod = 'STA-IS0005A'):
@@ -327,7 +391,7 @@ def sameina_ust_vedur(vedur_stod = 1475, ust_stod = 'STA-IS0005A'):
     saman.reset_index().to_csv(skra, sep=";", index=None)
     return skra
 
-def uppfaera_allt(stadir_list = [{"stadur":"Reykjavik", "stodvar":{"vedur": '1475', "ust":"STA-IS0052A"}}]):
+def uppfaera_allt(stadir_list = [{"stadur":"Reykjavik", "stodvar":{"vedur": '1475', "ust":"STA-IS0005A"}},{"stadur":"Akureyri", "stodvar":{"vedur": '3471', "ust":"STA-IS0052A"}}]):
     #Fall sem uppfærir veðurathugunargögn, veðurspá og loftgæðigögn
     #Fallið tekur inn lista af dict.
     #Í dict eru tveir lyklar, stadur, sem er lýsandi og ekki notaður. Hinn er stodvar sem inniheldur dict
@@ -338,8 +402,12 @@ def uppfaera_allt(stadir_list = [{"stadur":"Reykjavik", "stodvar":{"vedur": '147
     print("Ný ust gögn komin")
 
     #Vista ust gogn saman við eldri
-    #vista_latest_ust()
+    vista_latest_ust()
     print("Ný ust gögn vistuð með 2020")
+
+    #Ná í nýjustu veðurspá
+    pull_vedurspa()
+    print("Ný veðurspá vistuð")
 
     for stadir in stadir_list:
         print("Uppfærsla hefst fyrir:", stadir['stadur'])
@@ -362,11 +430,13 @@ def uppfaera_allt(stadir_list = [{"stadur":"Reykjavik", "stodvar":{"vedur": '147
 
 print("byrja")
 uppfaera_allt()
+#pull_vedurspa()
+
 #pull_ust_api()
 #sameina_ust_vedur()
 #sameina_ust_vedur(vedur_stod=3471, ust_stod='STA-IS0052A')
 #vista_latest_brunnur(stodvar= ['1475', '3471'])
-#vista_latest_ust()
+# vista_latest_ust()
 #sameina_ust_vedur()
 
 
