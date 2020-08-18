@@ -1,7 +1,7 @@
 ### api_gogn.py
 # Hofundar: Svifrykssveinar
 # Dags: 14.8.2020
-# Sidast breytt: 17.8.2020 
+# Sidast breytt: 18.8.2020 
 ###
 # Inniheldur foll sem na i gogn i gegnum opinber API
 
@@ -160,7 +160,31 @@ def pull_vedur_gamalt(fra_dags, til_dags, stodvar, nytt = True):
         count += 1
         dags -= 1
     
-def pull_vedurspa(stodvar = ['1','422']):
+
+def vindgradur(row, rod):
+    #Fall sem breytir Veðurspá vindátt í gráður
+    #rod er hvar í röðinni á param vindátt er úr vedur API
+    if row[rod] == 'Vindátt': row.append('Vindgráður')
+    elif row[rod] == 'Logn': row.append(0)
+    elif row[rod] == 'N': row.append(360)
+    elif row[rod] == 'NNA': row.append(23)
+    elif row[rod] == 'NA': row.append(45)
+    elif row[rod] == 'ANA': row.append(68)
+    elif row[rod] == 'A': row.append(91)
+    elif row[rod] == 'ASA': row.append(114)
+    elif row[rod] == 'SA': row.append(137)
+    elif row[rod] == 'SSA': row.append(160)
+    elif row[rod] == 'S': row.append(183)
+    elif row[rod] == 'SSV': row.append(206)
+    elif row[rod] == 'SV': row.append(229)
+    elif row[rod] == 'VSV': row.append(252)
+    elif row[rod] == 'V': row.append(275)
+    elif row[rod] == 'VNV': row.append(298)
+    elif row[rod] == 'NV': row.append(321)
+    elif row[rod] == 'NNV': row.append(344)
+    return row
+
+def pull_vedurspa(stodvar = ['1','422','1473']):
     #Fall sem nær í nýjustu veðurspá frá XML þjónustu vedur.is 
 
     #Vefsíða Umhverfisstofnunar með nýjust mæligildum
@@ -169,7 +193,7 @@ def pull_vedurspa(stodvar = ['1','422']):
     stod_count = 0
     for stod in stodvar:
         #leiðbeiningar fyrir param' https://www.vedur.is/media/vedurstofan/XMLthjonusta.pdf
-        param = "?op_w=xml&type=forec&lang=is&view=csv&ids="+str(stod)+"&params=R;T;FX;D;W;N;P;RH;TD"
+        param = "?op_w=xml&type=forec&lang=is&view=csv&ids="+str(stod)+"&params=R;T;F;FX;D;W;N;P"
         #Ná í gögn gegnum API
         print(url + param)
         response = requests.get(url + param)
@@ -184,6 +208,7 @@ def pull_vedurspa(stodvar = ['1','422']):
             my_list = list(cr)
             count = 0
             for row in my_list:
+                row = vindgradur(row, 9)
                 if count == 0 and stod_count == 0:
                     #Skrifum header bara frá fyrstu stöð
                     with open('data/vedurspa.csv','w', newline='') as csv_file:
@@ -265,7 +290,7 @@ def vista_latest_ust():
     # print(type(latest_ust.station_local_id.unique()))
     # print(pd.DataFrame(data=latest_ust.station_local_id.unique(), columns=["station_local_id"]))
     latest_stodvar = pd.DataFrame(data=latest_ust.station_local_id.unique(), columns=["station_local_id"])
-    print(ust_2020)
+    # print(ust_2020)
     stodvar_2020 = pd.DataFrame(data=ust_2020.station_local_id.unique(), columns=["station_local_id"])
     # print(latest_stodvar)
     # print(type(latest_stodvar))
@@ -321,8 +346,8 @@ def vista_latest_ust():
                     latest_stod_efni_nytt = latest_stod_efni.loc[latest_stod_efni['endtime'] > most_recent]
                 else:
                     latest_stod_efni_nytt = latest_stod_efni_nytt.append(latest_stod_efni.loc[latest_stod_efni['endtime'] > most_recent])
-                print(latest_stod_efni_nytt.head())
-                print(latest_stod_efni_nytt.tail())
+                # print(latest_stod_efni_nytt.head())
+                # print(latest_stod_efni_nytt.tail())
                 
                 #Vista nýju gildin í 2020 skrána
                 # for latest_index, latest_row in latest_stod_efni_nytt.iterrows():
@@ -332,11 +357,11 @@ def vista_latest_ust():
                 #                         latest_row['the_value'], latest_row['pollutantnotation'], \
                 #                         latest_row['concentration']])
                 count += 1
-    print('SIDASDA PRENT')
-    print(ust_2020.head())
-    print(ust_2020.tail())
-    print(ust_2020.append(latest_stod_efni_nytt).head())
-    print(ust_2020.append(latest_stod_efni_nytt).tail())
+    # print('SIDASDA PRENT')
+    # print(ust_2020.head())
+    # print(ust_2020.tail())
+    # print(ust_2020.append(latest_stod_efni_nytt).head())
+    # print(ust_2020.append(latest_stod_efni_nytt).tail())
     ust_2020.append(latest_stod_efni_nytt).to_csv("data/ust_2020_formatted.csv",sep = ';', index = False)
     
     
@@ -391,7 +416,7 @@ def sameina_ust_vedur(vedur_stod = 1475, ust_stod = 'STA-IS0005A'):
     saman.reset_index().to_csv(skra, sep=";", index=None)
     return skra
 
-def uppfaera_allt(stadir_list = [{"stadur":"Reykjavik", "stodvar":{"vedur": '1475', "ust":"STA-IS0005A"}},{"stadur":"Akureyri", "stodvar":{"vedur": '3471', "ust":"STA-IS0052A"}}]):
+def uppfaera_allt(stadir_list = [{"stadur":"Reykjavik", "stodvar":{"vedur": '1475', "ust":"STA-IS0005A"}},{"stadur":"Akureyri", "stodvar":{"vedur": '3471', "ust":"STA-IS0052A"}},{"stadur":"Hafnarfjordur", "stodvar":{"vedur": '1473', "ust":"STA-IS0002A"}}]):
     #Fall sem uppfærir veðurathugunargögn, veðurspá og loftgæðigögn
     #Fallið tekur inn lista af dict.
     #Í dict eru tveir lyklar, stadur, sem er lýsandi og ekki notaður. Hinn er stodvar sem inniheldur dict
@@ -440,4 +465,15 @@ uppfaera_allt()
 #sameina_ust_vedur()
 
 
+
     
+# pull_vedurspa()
+
+# spa = pd.read_csv('data/vedurspa.csv', encoding = "ISO-8859-1", sep = ',')
+
+# print(spa.head())
+# print(spa.tail())
+
+#saman['endtime'] = pd.to_datetime(saman['endtime'], format='%Y-%m-%d %H:00:00')
+#latest_stod = latest_ust.loc[(latest_ust['station_local_id'] == str(stod[0]))]
+#print(saman.loc[(saman['endtime'] == '2019-06-21')])
